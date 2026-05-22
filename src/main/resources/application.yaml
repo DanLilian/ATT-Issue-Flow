@@ -8,17 +8,38 @@ spring:
     url: jdbc:postgresql://localhost:5432/issueflow
     username: issueflow
     password: issueflow
-    driverClassName: org.postgresql.Driver
-    platform: postgres
+    driver-class-name: org.postgresql.Driver
   jpa:
-    database: POSTGRESQL
-    show-sql: true
     hibernate:
-      ddl-auto: update
-  sql:
-    init:
-      mode: always
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
   servlet:
     multipart:
       max-file-size: 10MB
-      max-request-size: 10MB
+      max-request-size: 11MB
+  jackson:
+    time-zone: UTC
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+app:
+  jwt:
+    secret: ${ISSUEFLOW_JWT_SECRET:change-me-in-production-this-must-be-at-least-32-bytes-long}
+    expiration-seconds: 3600
+  attachments:
+    max-bytes: 10485760
+    allowed-mime-types:
+      - image/png
+      - image/jpeg
+      - application/pdf
+      - text/plain
