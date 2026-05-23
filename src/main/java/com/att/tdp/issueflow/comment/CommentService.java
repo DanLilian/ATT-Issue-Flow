@@ -14,7 +14,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import com.att.tdp.issueflow.audit.AuditAction;
+import com.att.tdp.issueflow.audit.AuditEntityType;
+import com.att.tdp.issueflow.audit.AuditService;
 import java.util.List;
 import java.util.Set;
 
@@ -42,17 +44,20 @@ public class CommentService {
     private final TicketRepository ticketRepository;
     private final UserRepository userRepository;
     private final MentionParser mentionParser;
+    private final AuditService auditService;
 
     public CommentService(CommentRepository commentRepository,
                           CommentMentionRepository commentMentionRepository,
                           TicketRepository ticketRepository,
                           UserRepository userRepository,
-                          MentionParser mentionParser) {
+                          MentionParser mentionParser,
+                          AuditService auditService) {
         this.commentRepository = commentRepository;
         this.commentMentionRepository = commentMentionRepository;
         this.ticketRepository = ticketRepository;
         this.userRepository = userRepository;
         this.mentionParser = mentionParser;
+        this.auditService = auditService;
     }
 
     public List<CommentResponse> findByTicket(Long ticketId) {
@@ -79,7 +84,11 @@ public class CommentService {
 
         Comment saved = commentRepository.save(comment);
 
-        // TODO Phase 9: auditService.record(COMMENT_CREATE, COMMENT, saved.getId(), ...);
+        auditService.record(
+                AuditAction.COMMENT_CREATE,
+                AuditEntityType.COMMENT,
+                saved.getId(),
+                null);
 
         return CommentResponse.from(saved);
     }
@@ -107,7 +116,11 @@ public class CommentService {
         // No save() — managed entity, dirty checking on commit. @Version
         // detects concurrent modification at flush and throws.
 
-        // TODO Phase 9: auditService.record(COMMENT_UPDATE, COMMENT, commentId, ...);
+        auditService.record(
+                AuditAction.COMMENT_UPDATE,
+                AuditEntityType.COMMENT,
+                commentId,
+                null);
     }
 
     @Transactional
@@ -125,7 +138,11 @@ public class CommentService {
         // of deleting the mention rows automatically.
         commentRepository.delete(comment);
 
-        // TODO Phase 9: auditService.record(COMMENT_DELETE, COMMENT, commentId, ...);
+        auditService.record(
+                AuditAction.COMMENT_DELETE,
+                AuditEntityType.COMMENT,
+                commentId,
+                null);
     }
 
     /**
