@@ -9,6 +9,11 @@ import com.att.tdp.issueflow.ticket.dto.TicketResponse;
 import com.att.tdp.issueflow.ticket.dto.UpdateTicketRequest;
 import com.att.tdp.issueflow.user.User;
 import com.att.tdp.issueflow.user.UserRepository;
+import com.att.tdp.issueflow.audit.AuditAction;
+import com.att.tdp.issueflow.audit.AuditEntityType;
+import com.att.tdp.issueflow.audit.AuditService;
+import java.util.Map;
+import java.util.Objects;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,13 +43,16 @@ public class TicketService {
     private final TicketRepository ticketRepository;
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
+    private final AuditService auditService;
 
     public TicketService(TicketRepository ticketRepository,
                          ProjectRepository projectRepository,
-                         UserRepository userRepository) {
+                         UserRepository userRepository,
+                         AuditService auditService) {
         this.ticketRepository = ticketRepository;
         this.projectRepository = projectRepository;
         this.userRepository = userRepository;
+        this.auditService = auditService;
     }
 
     public List<TicketResponse> findByProject(Long projectId) {
@@ -67,11 +75,9 @@ public class TicketService {
 
     @Transactional
     public TicketResponse create(CreateTicketRequest req) {
-        // Project must exist and be active (@SQLRestriction excludes soft-deleted).
         Project project = projectRepository.findById(req.projectId())
                 .orElseThrow(() -> NotFoundException.of("Project", req.projectId()));
 
-        // Assignee optional; if provided, must exist.
         User assignee = null;
         if (req.assigneeId() != null) {
             assignee = userRepository.findById(req.assigneeId())
@@ -86,7 +92,11 @@ public class TicketService {
 
         Ticket saved = ticketRepository.save(ticket);
 
-        // TODO Phase 9: auditService.record(TICKET_CREATE, TICKET, saved.getId(), ...);
+        auditService.record(
+                AuditAction.TICKET_CREATE,
+                AuditEntityType.TICKET,
+                saved.getId(),
+                Map.of("title", saved.getTitle()));
         // TODO Phase 14: if auto-assigned, audit AUTO_ASSIGN with actor=SYSTEM.
 
         return TicketResponse.from(saved);
@@ -97,16 +107,19 @@ public class TicketService {
         Ticket ticket = ticketRepository.findById(id)
                 .orElseThrow(() -> NotFoundException.of("Ticket", id));
 
-        // PDF: "A ticket can't be updated once it's DONE."
-        // This check comes first — DONE is terminal even for no-op patches.
         try {
             ticket.assertNotTerminal();
         } catch (IllegalStateException ex) {
             throw new ConflictException(ex.getMessage());
         }
 
-        // Status transition: forward-only. The entity enforces; we translate
-        // its IllegalStateException to a 409 with a clear message.
+        // Snapshot "before" state for granular audit events.
+        TicketStatus oldStatus = ticket.getStatus();
+        TicketPriority oldPriority = ticket.getPriority();
+        Long oldAssigneeId = ticket.getAssignee() != null
+                ? ticket.getAssignee().getId()
+                : null;
+
         if (req.status() != null && req.status() != ticket.getStatus()) {
             try {
                 ticket.transitionTo(req.status());
@@ -115,14 +128,10 @@ public class TicketService {
             }
         }
 
-        // Manual priority change resets isOverdue (PDF 3.7).
         if (req.priority() != null && req.priority() != ticket.getPriority()) {
             ticket.updatePriorityManually(req.priority());
         }
 
-        // Assignee: only change when the field is present in the request.
-        // Per the PATCH semantics defined in CreateTicketRequest's note,
-        // null means 'don't change'.
         if (req.assigneeId() != null) {
             User newAssignee = userRepository.findById(req.assigneeId())
                     .orElseThrow(() -> NotFoundException.of("User", req.assigneeId()));
@@ -133,17 +142,39 @@ public class TicketService {
             ticket.updateDueDate(req.dueDate());
         }
 
-        // Title and description: nullable -> 'don't change'. The entity
-        // method already ignores nulls.
         ticket.updateContent(req.title(), req.description());
 
-        // No save() — managed entity, dirty checking on commit. The @Version
-        // bump happens at flush. If another transaction committed first, an
-        // OptimisticLockingFailureException fires and is mapped to 409 by
-        // the global handler.
+        // Audit: always emit TICKET_UPDATE.
+        auditService.record(AuditAction.TICKET_UPDATE, AuditEntityType.TICKET, id, null);
 
-        // TODO Phase 9: audit (TICKET_UPDATE, plus TICKET_STATUS_CHANGE /
-        // TICKET_PRIORITY_CHANGE / TICKET_ASSIGN as appropriate).
+        // Plus granular events for the specific transitions that consumers
+        // care most about.
+        if (oldStatus != ticket.getStatus()) {
+            auditService.record(
+                    AuditAction.TICKET_STATUS_CHANGE,
+                    AuditEntityType.TICKET,
+                    id,
+                    Map.of("from", oldStatus.name(), "to", ticket.getStatus().name()));
+        }
+        if (oldPriority != ticket.getPriority()) {
+            auditService.record(
+                    AuditAction.TICKET_PRIORITY_CHANGE,
+                    AuditEntityType.TICKET,
+                    id,
+                    Map.of("from", oldPriority.name(), "to", ticket.getPriority().name()));
+        }
+        Long newAssigneeId = ticket.getAssignee() != null
+                ? ticket.getAssignee().getId()
+                : null;
+        if (!Objects.equals(oldAssigneeId, newAssigneeId)) {
+            auditService.record(
+                    AuditAction.TICKET_ASSIGN,
+                    AuditEntityType.TICKET,
+                    id,
+                    newAssigneeId != null
+                            ? Map.of("assigneeId", newAssigneeId)
+                            : null);
+        }
     }
 
     @Transactional
@@ -153,7 +184,11 @@ public class TicketService {
 
         ticket.markDeleted();
 
-        // TODO Phase 9: auditService.record(TICKET_DELETE, TICKET, id, ...);
+        auditService.record(
+                AuditAction.TICKET_DELETE,
+                AuditEntityType.TICKET,
+                id,
+                null);
     }
 
     /** ADMIN-only. List soft-deleted tickets for a project. */
@@ -182,6 +217,10 @@ public class TicketService {
 
         ticket.restore();
 
-        // TODO Phase 9: auditService.record(TICKET_RESTORE, TICKET, id, ...);
+        auditService.record(
+                AuditAction.TICKET_RESTORE,
+                AuditEntityType.TICKET,
+                id,
+                null);
     }
 }
