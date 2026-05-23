@@ -1,5 +1,8 @@
 package com.att.tdp.issueflow.user;
 
+import com.att.tdp.issueflow.audit.AuditAction;
+import com.att.tdp.issueflow.audit.AuditEntityType;
+import com.att.tdp.issueflow.audit.AuditService;
 import com.att.tdp.issueflow.common.error.ConflictException;
 import com.att.tdp.issueflow.common.error.NotFoundException;
 import com.att.tdp.issueflow.user.dto.CreateUserRequest;
@@ -10,6 +13,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
 import java.util.List;
 
 /**
@@ -28,10 +32,12 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final AuditService auditService;
 
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder, AuditService auditService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.auditService = auditService;
     }
 
     public List<UserResponse> findAll() {
@@ -68,8 +74,12 @@ public class UserService {
         );
         User saved = userRepository.save(user);
 
-        // TODO Phase 9: auditService.record(USER_CREATE, USER, saved.getId(), ...);
-
+        auditService.record(
+                AuditAction.USER_CREATE,
+                AuditEntityType.USER,
+                saved.getId(),
+                Map.of("username", saved.getUsername()));
+        
         return UserResponse.from(saved);
     }
 
@@ -84,7 +94,11 @@ public class UserService {
         // No explicit save() needed — managed entity in a @Transactional method
         // is automatically flushed on commit (Hibernate dirty checking).
 
-        // TODO Phase 9: auditService.record(USER_UPDATE, USER, id, oldRole/newRole/...);
+        auditService.record(
+                AuditAction.USER_UPDATE,
+                AuditEntityType.USER,
+                id,
+                null);    
     }
 
     @Transactional
@@ -102,6 +116,10 @@ public class UserService {
                 "User cannot be deleted because they own projects, comments, or attachments.");
         }
 
-        // TODO Phase 9: auditService.record(USER_DELETE, USER, id, ...);
+        auditService.record(
+                AuditAction.USER_DELETE,
+                AuditEntityType.USER,
+                id,
+                null);
     }
 }
