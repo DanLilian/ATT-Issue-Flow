@@ -2,6 +2,7 @@ package com.att.tdp.issueflow.user;
 
 import com.att.tdp.issueflow.common.error.ConflictException;
 import com.att.tdp.issueflow.common.error.GlobalExceptionHandler;
+import com.att.tdp.issueflow.config.SecurityConfig;
 import com.att.tdp.issueflow.common.error.NotFoundException;
 import com.att.tdp.issueflow.user.dto.UpdateUserRequest;
 import com.att.tdp.issueflow.user.dto.UserResponse;
@@ -28,7 +29,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * mapping via the shared GlobalExceptionHandler.
  */
 @WebMvcTest(UserController.class)
-@Import(GlobalExceptionHandler.class)
+@Import({GlobalExceptionHandler.class, SecurityConfig.class})
 class UserControllerTest {
 
     @Autowired MockMvc mockMvc;
