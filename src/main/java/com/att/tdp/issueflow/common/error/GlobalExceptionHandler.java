@@ -18,7 +18,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
-
+import org.springframework.security.authentication.BadCredentialsException;
 import java.util.List;
 
 /**
@@ -52,6 +52,11 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleForbidden(ForbiddenActionException ex, HttpServletRequest req) {
         return clientError(HttpStatus.FORBIDDEN, ex.getMessage(), req);
     }
+
+    @ExceptionHandler(BadCredentialsException.class)
+    public ResponseEntity<ApiError> handleBadCredentials(BadCredentialsException ex, HttpServletRequest req) {
+        return clientError(HttpStatus.UNAUTHORIZED, ex.getMessage(), req);
+        }
 
     @ExceptionHandler(ValidationException.class)
     public ResponseEntity<ApiError> handleValidation(ValidationException ex, HttpServletRequest req) {
