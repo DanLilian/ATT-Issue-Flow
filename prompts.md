@@ -51,3 +51,10 @@ The conversation was opened with a senior-mentor role prompt that constrained th
 - Resolved by creating a test-only `TestSecurityConfig` that mirrors path rules without the JWT filter, plus `@WebMvcTest.excludeFilters` to suppress the main `SecurityConfig` from the slice scan.
 - Login deliberately collapses all AuthenticationException subtypes to one generic 401 message ("Invalid username or password") to prevent username enumeration.
 - The end-to-end integration test (`AuthIntegrationTest`) uses real Spring context, real BCrypt, real JWT filter — the only test that proves the whole auth story works as a system.
+
+### Phase 6 — Project management
+- Asked the assistant to implement the Project endpoints and to verify the soft-delete pattern end-to-end before moving on.
+- Used the @PreAuthorize annotation for the first time, gating /projects/deleted and /projects/{id}/restore to ADMIN role. The 403 path reuses the AccessDeniedHandler installed in Phase 5 — no new error-handling code needed.
+- Discussed two semantics questions for restore: (a) what if the project is already active, and (b) what if the id doesn't exist. Chose 409 for the first and 404 for the second; distinguishing them in the service required one extra findById call but produces much clearer error messages than collapsing both to 404.
+- Pre-checked owner existence on create so the error message is "User with id N not found" instead of the generic 409 the FK violation would produce.
+- Tests focus on what's new (soft delete, owner validation, ADMIN-only authorization) rather than re-testing patterns already covered in Phase 4.
