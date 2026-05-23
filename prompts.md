@@ -21,3 +21,9 @@ The conversation was opened with a senior-mentor role prompt that constrained th
 
 ### Phase 1 — Project setup
 - Asked the assistant to choose between Flyway vs `ddl-auto`, springdoc vs none, and stateless logout vs deny-list, given a strict reading of the requirements. Decisions made: Flyway, springdoc, JTI deny-list.
+
+### Phase 2 — Domain model
+- Asked the assistant to design entities, repositories, and the first Flyway migration as a coherent unit.
+- Discussed and chose: `@SQLRestriction` over manual soft-delete filtering, `@Version` on Ticket and Comment only, `@EmbeddedId` + `@MapsId` for composite keys, bytes-in-DB for attachments at this scale, append-only AuditLog enforced by absence of mutators, and Postgres partial index for the escalation scan.
+- During Postgres verification, hit `Schema-validation: wrong column type` on `attachments.data` — `@Lob byte[]` defaults to OID storage on Postgres. Replaced with `@JdbcTypeCode(SqlTypes.BINARY)` + `columnDefinition="bytea"` so the entity, migration, and runtime all agree on inline BYTEA storage.
+- Reviewed the full schema against the entity model and the README contract before merging.
