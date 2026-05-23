@@ -19,6 +19,7 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import java.util.List;
 
 /**
@@ -53,6 +54,18 @@ public class GlobalExceptionHandler {
         return clientError(HttpStatus.FORBIDDEN, ex.getMessage(), req);
     }
 
+    /**
+     * Spring Security 6.x throws AuthorizationDeniedException from
+     * @PreAuthorize / @PostAuthorize when the authorization check fails.
+     * Maps to 403 with our ApiError shape — same outcome as
+     * ForbiddenActionException, different source.
+     */
+    @ExceptionHandler(AuthorizationDeniedException.class)
+    public ResponseEntity<ApiError> handleAuthorizationDenied(AuthorizationDeniedException ex,
+                                                            HttpServletRequest req) {
+        return clientError(HttpStatus.FORBIDDEN, "Access denied", req);
+    }
+    
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<ApiError> handleBadCredentials(BadCredentialsException ex, HttpServletRequest req) {
         return clientError(HttpStatus.UNAUTHORIZED, ex.getMessage(), req);
