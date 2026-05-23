@@ -4,6 +4,7 @@ import com.att.tdp.issueflow.common.error.ConflictException;
 import com.att.tdp.issueflow.common.error.NotFoundException;
 import com.att.tdp.issueflow.project.Project;
 import com.att.tdp.issueflow.project.ProjectRepository;
+import com.att.tdp.issueflow.ticket.dependency.TicketDependencyRepository;
 import com.att.tdp.issueflow.ticket.dto.CreateTicketRequest;
 import com.att.tdp.issueflow.ticket.dto.TicketResponse;
 import com.att.tdp.issueflow.ticket.dto.UpdateTicketRequest;
@@ -44,14 +45,17 @@ public class TicketService {
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    private final TicketDependencyRepository dependencyRepository;
 
     public TicketService(TicketRepository ticketRepository,
                          ProjectRepository projectRepository,
                          UserRepository userRepository,
+                         TicketDependencyRepository dependencyRepository,
                          AuditService auditService) {
         this.ticketRepository = ticketRepository;
         this.projectRepository = projectRepository;
         this.userRepository = userRepository;
+        this.dependencyRepository = dependencyRepository;
         this.auditService = auditService;
     }
 
@@ -121,6 +125,16 @@ public class TicketService {
                 : null;
 
         if (req.status() != null && req.status() != ticket.getStatus()) {
+            // PDF rule: cannot transition to DONE while any blocker is unresolved.
+            // Checked BEFORE the entity-level transitionTo so we don't mutate then
+            // throw — keeps the entity state consistent with the rejection.
+            if (req.status() == TicketStatus.DONE
+                    && dependencyRepository.existsByTicketIdAndBlockerStatusNot(
+                            id, TicketStatus.DONE)) {
+                throw new ConflictException(
+                    "Cannot transition to DONE: ticket has unresolved blockers");
+            }
+
             try {
                 ticket.transitionTo(req.status());
             } catch (IllegalStateException ex) {
