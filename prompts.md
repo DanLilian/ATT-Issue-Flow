@@ -66,3 +66,10 @@ The conversation was opened with a senior-mentor role prompt that constrained th
 - DONE lock check is the *first* gate in update — even no-op patches against a DONE ticket return 409. Simple, predictable, matches the spec.
 - Type is deliberately omitted from UpdateTicketRequest per the README's spec ("can update title, description, status, priority, assigneeId").
 - Auto-assignment (Phase 14) is marked with a TODO at the exact hook in TicketService.create — when the time comes, it's a small change, not a structural rewrite.
+
+### Phase 8 — Comments and mentions
+- Asked the assistant to design the mention parser regex with explicit thought about which substrings should and should not match (start of string yes, mid-text yes, inside emails no, after apostrophes yes-but-trimmed). Chose (?:^|\W)@([A-Za-z0-9_.-]+) and tested all the edge cases.
+- Mention recomputation relies on entity.replaceMentions plus the CascadeType.ALL + orphanRemoval combination on Comment.mentions established in Phase 2. The service is one line: `comment.replaceMentions(parser.resolveMentions(content))`; Hibernate's flush handles the diff.
+- Discussed whether comments on DONE tickets should be locked (the PDF only locks ticket fields, not the conversation around them). Decided: allow. Post-mortems are a real workflow.
+- The README's mention pagination shape {data, total, page} doesn't match Spring Data's default Page. Adapted at the service boundary so the rest of the code stays in Spring conventions.
+- The defensive ticketId-vs-comment.ticketId check on update/delete prevents URL-crafted cross-ticket comment mutation — 404 because that comment doesn't logically exist under the wrong ticket.
