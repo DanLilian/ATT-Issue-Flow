@@ -2,24 +2,28 @@ package com.att.tdp.issueflow.user;
 
 import com.att.tdp.issueflow.common.error.ConflictException;
 import com.att.tdp.issueflow.common.error.GlobalExceptionHandler;
-import com.att.tdp.issueflow.config.SecurityConfig;
 import com.att.tdp.issueflow.common.error.NotFoundException;
+import com.att.tdp.issueflow.config.TestSecurityConfig;
 import com.att.tdp.issueflow.user.dto.UpdateUserRequest;
 import com.att.tdp.issueflow.user.dto.UserResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.FilterType;
 
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -27,14 +31,29 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Slice test for UserController. Service is mocked so the test focuses on
  * HTTP shape: status codes, request validation, JSON serialization, error
  * mapping via the shared GlobalExceptionHandler.
+ *
+ * Every request includes .with(user(...)) because the real SecurityConfig
+ * is now active — endpoints reject unauthenticated calls with 401.
  */
-@WebMvcTest(UserController.class)
-@Import({GlobalExceptionHandler.class, SecurityConfig.class})
+@WebMvcTest(
+    controllers = UserController.class,
+    excludeFilters = @ComponentScan.Filter(
+        type = FilterType.ASSIGNABLE_TYPE,
+        classes = {
+            com.att.tdp.issueflow.config.SecurityConfig.class,
+            com.att.tdp.issueflow.config.SecurityProblemHandlers.class,
+            com.att.tdp.issueflow.auth.jwt.JwtAuthenticationFilter.class
+        }
+    )
+)
+@Import({GlobalExceptionHandler.class, TestSecurityConfig.class})
 class UserControllerTest {
-
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper json;
     @MockitoBean UserService userService;
+
+    // No more @MockitoBean for the JWT filter and its deps — TestSecurityConfig
+    // doesn't reference them, so the slice doesn't need them.
 
     @Test
     void getAllUsers_returnsList() throws Exception {
@@ -42,7 +61,7 @@ class UserControllerTest {
                 new UserResponse(1L, "alice", "alice@x.com", "Alice", UserRole.DEVELOPER),
                 new UserResponse(2L, "bob",   "bob@x.com",   "Bob",   UserRole.ADMIN)));
 
-        mockMvc.perform(get("/users"))
+        mockMvc.perform(get("/users").with(user("admin").roles("ADMIN")))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.length()").value(2))
@@ -55,7 +74,7 @@ class UserControllerTest {
         when(userService.findById(1L)).thenReturn(
                 new UserResponse(1L, "alice", "alice@x.com", "Alice", UserRole.DEVELOPER));
 
-        mockMvc.perform(get("/users/1"))
+        mockMvc.perform(get("/users/1").with(user("admin").roles("ADMIN")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(1))
                 .andExpect(jsonPath("$.username").value("alice"));
@@ -65,7 +84,7 @@ class UserControllerTest {
     void getUser_returns404_whenMissing() throws Exception {
         when(userService.findById(99L)).thenThrow(NotFoundException.of("User", 99L));
 
-        mockMvc.perform(get("/users/99"))
+        mockMvc.perform(get("/users/99").with(user("admin").roles("ADMIN")))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status").value(404))
                 .andExpect(jsonPath("$.message").value("User with id 99 not found"));
@@ -87,6 +106,7 @@ class UserControllerTest {
             """;
 
         mockMvc.perform(post("/users")
+                        .with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isOk())            // 200, NOT 201 — README contract
@@ -107,6 +127,7 @@ class UserControllerTest {
             """;
 
         mockMvc.perform(post("/users")
+                        .with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isBadRequest())
@@ -126,6 +147,7 @@ class UserControllerTest {
             """;
 
         mockMvc.perform(post("/users")
+                        .with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isBadRequest())
@@ -134,8 +156,6 @@ class UserControllerTest {
 
     @Test
     void createUser_returns400_whenRoleInvalid() throws Exception {
-        // Jackson rejects unknown enum values with InvalidFormatException,
-        // mapped by GlobalExceptionHandler to 400 with field-aware message.
         String body = """
             {
               "username": "alice",
@@ -147,6 +167,7 @@ class UserControllerTest {
             """;
 
         mockMvc.perform(post("/users")
+                        .with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isBadRequest())
@@ -170,6 +191,7 @@ class UserControllerTest {
             """;
 
         mockMvc.perform(post("/users")
+                        .with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isConflict())
@@ -178,12 +200,12 @@ class UserControllerTest {
 
     @Test
     void updateUser_postsToUnusualPath_perReadmeContract() throws Exception {
-        // README endpoint is POST /users/update/{id}, NOT PATCH /users/{id}.
         String body = """
             { "fullName": "Alice Smith", "role": "ADMIN" }
             """;
 
         mockMvc.perform(post("/users/update/1")
+                        .with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isOk())
@@ -194,7 +216,7 @@ class UserControllerTest {
 
     @Test
     void deleteUser_returns200_withEmptyBody() throws Exception {
-        mockMvc.perform(delete("/users/1"))
+        mockMvc.perform(delete("/users/1").with(user("admin").roles("ADMIN")))
                 .andExpect(status().isOk())
                 .andExpect(content().string(""));
 
