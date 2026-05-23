@@ -58,3 +58,11 @@ The conversation was opened with a senior-mentor role prompt that constrained th
 - Discussed two semantics questions for restore: (a) what if the project is already active, and (b) what if the id doesn't exist. Chose 409 for the first and 404 for the second; distinguishing them in the service required one extra findById call but produces much clearer error messages than collapsing both to 404.
 - Pre-checked owner existence on create so the error message is "User with id N not found" instead of the generic 409 the FK violation would produce.
 - Tests focus on what's new (soft delete, owner validation, ADMIN-only authorization) rather than re-testing patterns already covered in Phase 4.
+
+### Phase 7 — Ticket management
+- Asked the assistant to design the heaviest single phase as the convergence point for status rules, optimistic locking, soft delete, and admin authorization established in earlier phases.
+- Hardest test to write: optimistic locking. Hibernate's first-level cache means loading the same entity twice in one session returns the same instance, so the standard pattern (load, mutate, save twice) doesn't fire. Used detach + merge to exercise the version conflict in a single-test transaction; production hits this naturally with two HTTP requests.
+- The PDF 3.7 invariant ("manual priority change resets isOverdue") was tested end-to-end by driving the ticket to CRITICAL+isOverdue via the entity's autoEscalate, then verifying that a service-layer manual priority change clears the flag.
+- DONE lock check is the *first* gate in update — even no-op patches against a DONE ticket return 409. Simple, predictable, matches the spec.
+- Type is deliberately omitted from UpdateTicketRequest per the README's spec ("can update title, description, status, priority, assigneeId").
+- Auto-assignment (Phase 14) is marked with a TODO at the exact hook in TicketService.create — when the time comes, it's a small change, not a structural rewrite.
