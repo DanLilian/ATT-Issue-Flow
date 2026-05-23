@@ -34,3 +34,10 @@ The conversation was opened with a senior-mentor role prompt that constrained th
 - Mapped OptimisticLockingFailureException -> 409 to satisfy the spec's "no concurrent updates" rule for tickets and comments.
 - Mapped DataIntegrityViolationException -> 409 with a generic message (no SQL state leakage to clients).
 - Verified with a throwaway controller via standalone MockMvc — confirms the mapping works without needing any production controller.
+
+### Phase 4 — User management
+- Asked the assistant to implement the User endpoints exactly per the README contract, including the two unconventional shapes (POST /users returns 200 not 201; POST /users/update/{id} instead of PATCH).
+- Discussed the spec gap around password: the README's create body has no password field, but POST /auth/login (Phase 5) requires one. Decided to add `password` to CreateUserRequest as the simplest defensible choice. Documented here.
+- Chose to add only `spring-security-crypto` for now (not the full starter) so password hashing is available without auto-locking endpoints. Full Spring Security arrives in Phase 5.
+- For delete: chose to flush() inside a try/catch in the service so FK-RESTRICT violations surface as a specific ConflictException with a clear message, not a generic 409 from the global handler.
+- Tests structured as slice tests (@DataJpaTest for service, @WebMvcTest for controller) rather than a full @SpringBootTest — much faster and the focus per test is sharper.
