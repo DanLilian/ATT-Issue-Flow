@@ -6,6 +6,8 @@ import com.att.tdp.issueflow.common.error.ConflictException;
 import com.att.tdp.issueflow.common.error.NotFoundException;
 import com.att.tdp.issueflow.project.Project;
 import com.att.tdp.issueflow.project.ProjectRepository;
+import com.att.tdp.issueflow.ticket.dependency.TicketDependency;
+import com.att.tdp.issueflow.ticket.dependency.TicketDependencyRepository;
 import com.att.tdp.issueflow.ticket.dto.CreateTicketRequest;
 import com.att.tdp.issueflow.ticket.dto.TicketResponse;
 import com.att.tdp.issueflow.ticket.dto.UpdateTicketRequest;
@@ -50,6 +52,7 @@ class TicketServiceTest {
     @Autowired TicketRepository ticketRepository;
     @Autowired ProjectRepository projectRepository;
     @Autowired UserRepository userRepository;
+    @Autowired TicketDependencyRepository dependencyRepository;
     @PersistenceContext EntityManager entityManager;
 
     private Long projectId;
@@ -200,6 +203,32 @@ class TicketServiceTest {
                 .hasMessageContaining("DONE");
     }
 
+    @Test
+        void update_rejectsTransitionToDone_whenUnresolvedBlockersExist() {
+        // Create the ticket and walk it to IN_REVIEW (legal forward transitions).
+        TicketResponse t = ticketService.create(validCreate());
+        ticketService.update(t.id(), new UpdateTicketRequest(
+                null, null, TicketStatus.IN_PROGRESS, null, null, null));
+        ticketService.update(t.id(), new UpdateTicketRequest(
+                null, null, TicketStatus.IN_REVIEW, null, null, null));
+
+        // Create a blocker ticket in the same project, leave it at TODO.
+        TicketResponse blocker = ticketService.create(validCreate());
+
+        // Wire up the dependency directly via the repository (the service is
+        // tested separately in TicketDependencyServiceTest).
+        Ticket ticketEntity = ticketRepository.findById(t.id()).orElseThrow();
+        Ticket blockerEntity = ticketRepository.findById(blocker.id()).orElseThrow();
+        dependencyRepository.save(new TicketDependency(ticketEntity, blockerEntity));
+        entityManager.flush();
+        entityManager.clear();
+
+        // Attempt to move the blocked ticket to DONE — should be rejected.
+        assertThatThrownBy(() -> ticketService.update(t.id(), new UpdateTicketRequest(
+                null, null, TicketStatus.DONE, null, null, null)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("unresolved blockers");
+        }
     // ─── Manual priority change resets isOverdue ────────────────────────
 
     @Test
