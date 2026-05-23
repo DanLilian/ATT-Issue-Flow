@@ -1,5 +1,8 @@
 package com.att.tdp.issueflow.project;
 
+import com.att.tdp.issueflow.audit.AuditAction;
+import com.att.tdp.issueflow.audit.AuditEntityType;
+import com.att.tdp.issueflow.audit.AuditService;
 import com.att.tdp.issueflow.common.error.ConflictException;
 import com.att.tdp.issueflow.common.error.NotFoundException;
 import com.att.tdp.issueflow.project.dto.CreateProjectRequest;
@@ -10,6 +13,7 @@ import com.att.tdp.issueflow.user.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
 import java.util.List;
 
 /**
@@ -28,11 +32,13 @@ public class ProjectService {
 
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
+    private final AuditService auditService;
 
     public ProjectService(ProjectRepository projectRepository,
-                          UserRepository userRepository) {
+                        UserRepository userRepository, AuditService auditService) {
         this.projectRepository = projectRepository;
         this.userRepository = userRepository;
+        this.auditService = auditService;
     }
 
     public List<ProjectResponse> findAll() {
@@ -58,7 +64,11 @@ public class ProjectService {
         Project project = new Project(req.name(), req.description(), owner);
         Project saved = projectRepository.save(project);
 
-        // TODO Phase 9: auditService.record(PROJECT_CREATE, PROJECT, saved.getId(), ...);
+        auditService.record(
+                AuditAction.PROJECT_CREATE,
+                AuditEntityType.PROJECT,
+                saved.getId(),
+                Map.of("name", saved.getName()));
 
         return ProjectResponse.from(saved);
     }
@@ -72,7 +82,11 @@ public class ProjectService {
 
         // No explicit save() — managed entity, dirty checking on commit.
 
-        // TODO Phase 9: auditService.record(PROJECT_UPDATE, PROJECT, id, ...);
+        auditService.record(
+                AuditAction.PROJECT_UPDATE,
+                AuditEntityType.PROJECT,
+                id,
+                null);
     }
 
     @Transactional
@@ -89,7 +103,11 @@ public class ProjectService {
         // explicitly makes the intent visible in the diff.
         project.markDeleted();
 
-        // TODO Phase 9: auditService.record(PROJECT_DELETE, PROJECT, id, ...);
+        auditService.record(
+                AuditAction.PROJECT_DELETE,
+                AuditEntityType.PROJECT,
+                id,
+                null);
     }
 
     /**
@@ -126,6 +144,10 @@ public class ProjectService {
 
         project.restore();
 
-        // TODO Phase 9: auditService.record(PROJECT_RESTORE, PROJECT, id, ...);
+        auditService.record(
+                AuditAction.PROJECT_RESTORE,
+                AuditEntityType.PROJECT,
+                id,
+                null);
     }
 }

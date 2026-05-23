@@ -9,6 +9,10 @@ import com.att.tdp.issueflow.auth.jwt.RevokedTokenRepository;
 import com.att.tdp.issueflow.common.error.NotFoundException;
 import com.att.tdp.issueflow.user.User;
 import com.att.tdp.issueflow.user.UserRepository;
+import com.att.tdp.issueflow.audit.AuditAction;
+import com.att.tdp.issueflow.audit.AuditActor;
+import com.att.tdp.issueflow.audit.AuditEntityType;
+import com.att.tdp.issueflow.audit.AuditService;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -39,15 +43,18 @@ public class AuthService {
     private final JwtService jwtService;
     private final RevokedTokenRepository revokedTokenRepository;
     private final UserRepository userRepository;
+    private final AuditService auditService;
 
     public AuthService(AuthenticationManager authenticationManager,
                        JwtService jwtService,
                        RevokedTokenRepository revokedTokenRepository,
-                       UserRepository userRepository) {
+                       UserRepository userRepository,
+                       AuditService auditService) {
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
         this.revokedTokenRepository = revokedTokenRepository;
         this.userRepository = userRepository;
+        this.auditService = auditService;
     }
 
     /**
@@ -58,26 +65,24 @@ public class AuthService {
     @Transactional(readOnly = true)
     public LoginResponse login(LoginRequest req) {
         try {
-            // Framework call: throws if username unknown or password wrong.
-            // The returned Authentication carries the principal, which we
-            // ignore — we re-fetch the User entity to issue a token with
-            // the uid claim populated from the DB.
             authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(req.username(), req.password()));
         } catch (AuthenticationException ex) {
-            // Normalize ALL authentication failures (bad password, missing
-            // user, disabled account, etc.) to a single exception type so
-            // callers cannot distinguish between them.
             throw new BadCredentialsException("Invalid username or password");
         }
 
-        // Credentials verified. Fetch the user to populate token claims.
         User user = userRepository.findByUsernameIgnoreCase(req.username())
                 .orElseThrow(() -> new BadCredentialsException("Invalid username or password"));
 
         JwtService.IssuedToken issued = jwtService.issueFor(user);
 
-        // TODO Phase 9: auditService.record(LOGIN, USER, user.getId(), ...);
+        auditService.record(
+                AuditAction.LOGIN,
+                AuditEntityType.USER,
+                user.getId(),
+                AuditActor.USER,
+                user.getId(),
+                null);
 
         return LoginResponse.bearer(issued.token(), issued.expiresInSeconds());
     }
@@ -96,21 +101,25 @@ public class AuthService {
     public void logout(String token) {
         String jti = jwtService.extractJti(token);
         if (jti == null) {
-            // Token had no jti claim — nothing to revoke. Shouldn't happen
-            // since we always issue with a jti, but defensive.
             return;
         }
         if (revokedTokenRepository.existsByJti(jti)) {
-            return; // already revoked, idempotent
+            return;
         }
 
-        // The token's expiry tells us how long the deny-list entry must
-        // persist. Past expiry, the signature check rejects the token
-        // anyway, so the deny-list entry becomes redundant.
-        Instant expiry = jwtService.parse(token).getExpiration().toInstant();
+        var claims = jwtService.parse(token);
+        Instant expiry = claims.getExpiration().toInstant();
+        Long userId = claims.get("uid", Long.class);
+
         revokedTokenRepository.save(new RevokedToken(jti, expiry));
 
-        // TODO Phase 9: auditService.record(LOGOUT, USER, currentUserId, ...);
+        auditService.record(
+                AuditAction.LOGOUT,
+                AuditEntityType.USER,
+                userId,
+                AuditActor.USER,
+                userId,
+                null);
     }
 
     /**

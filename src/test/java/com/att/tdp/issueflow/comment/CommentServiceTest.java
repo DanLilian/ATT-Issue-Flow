@@ -1,5 +1,6 @@
 package com.att.tdp.issueflow.comment;
 
+import com.att.tdp.issueflow.audit.AuditService;
 import com.att.tdp.issueflow.comment.dto.CommentResponse;
 import com.att.tdp.issueflow.comment.dto.CreateCommentRequest;
 import com.att.tdp.issueflow.comment.dto.MentionsPageResponse;
@@ -42,7 +43,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({CommentService.class, MentionParser.class, JpaConfig.class})
+@Import({CommentService.class, MentionParser.class, AuditService.class,
+         JpaConfig.class, com.fasterxml.jackson.databind.ObjectMapper.class})
 class CommentServiceTest {
 
     @Autowired CommentService commentService;
