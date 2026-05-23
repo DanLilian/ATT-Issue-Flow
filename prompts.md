@@ -73,3 +73,10 @@ The conversation was opened with a senior-mentor role prompt that constrained th
 - Discussed whether comments on DONE tickets should be locked (the PDF only locks ticket fields, not the conversation around them). Decided: allow. Post-mortems are a real workflow.
 - The README's mention pagination shape {data, total, page} doesn't match Spring Data's default Page. Adapted at the service boundary so the rest of the code stays in Spring conventions.
 - The defensive ticketId-vs-comment.ticketId check on update/delete prevents URL-crafted cross-ticket comment mutation — 404 because that comment doesn't logically exist under the wrong ticket.
+
+### Phase 9 — Audit log
+- The big design choice: REQUIRES_NEW propagation for audit writes, so a logging failure cannot roll back a real state change. The trade-off (audit row may exist for an event that subsequently rolls back) is acceptable because audit is observational. The opposite trade-off would let an audit blip undo a user's action — much worse.
+- Replaced every TODO Phase 9 marker placed in Phases 4-8 in one branch. Per-service ordering kept the build green at each step.
+- For TICKET updates, the audit captures both a general TICKET_UPDATE and (when applicable) granular TICKET_STATUS_CHANGE / TICKET_PRIORITY_CHANGE / TICKET_ASSIGN events with old/new metadata. Consumers care most about these specific transitions.
+- The filter endpoint uses JpaSpecificationExecutor for AND-composed optional filters. Type-safe via Criteria, no JPQL strings.
+- Introduced a generic PageResponse<T> matching the README's pagination shape; will eventually replace MentionsPageResponse from Phase 8.
