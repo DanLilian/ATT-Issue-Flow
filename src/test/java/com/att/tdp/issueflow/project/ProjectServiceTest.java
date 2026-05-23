@@ -1,5 +1,6 @@
 package com.att.tdp.issueflow.project;
 
+import com.att.tdp.issueflow.audit.AuditService;
 import com.att.tdp.issueflow.common.JpaConfig;
 import com.att.tdp.issueflow.common.error.ConflictException;
 import com.att.tdp.issueflow.common.error.NotFoundException;
@@ -31,7 +32,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({ProjectService.class, JpaConfig.class})
+@Import({ProjectService.class, AuditService.class, JpaConfig.class,
+         com.fasterxml.jackson.databind.ObjectMapper.class})
 class ProjectServiceTest {
 
     @Autowired ProjectService projectService;
