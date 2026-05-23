@@ -1,5 +1,8 @@
 package com.att.tdp.issueflow.ticket.attachment;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import com.att.tdp.issueflow.common.BaseEntity;
 import com.att.tdp.issueflow.ticket.Ticket;
 import com.att.tdp.issueflow.user.User;
@@ -28,13 +31,13 @@ public class Attachment extends BaseEntity {
     private long sizeBytes;
 
     /**
-     * Raw bytes. @Lob + @Basic(LAZY) ensures the bytes are NOT loaded
+     * Raw bytes. @Basic(LAZY) ensures the bytes are NOT loaded
      * when the row is fetched for listing — only when explicitly read.
      * Critical for performance: listing attachments should not pull MBs.
      */
-    @Lob
     @Basic(fetch = FetchType.LAZY)
-    @Column(name = "data", nullable = false)
+    @Column(name = "data", nullable = false, columnDefinition = "bytea")
+    @JdbcTypeCode(SqlTypes.BINARY)
     private byte[] data;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
