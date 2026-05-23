@@ -80,3 +80,9 @@ The conversation was opened with a senior-mentor role prompt that constrained th
 - For TICKET updates, the audit captures both a general TICKET_UPDATE and (when applicable) granular TICKET_STATUS_CHANGE / TICKET_PRIORITY_CHANGE / TICKET_ASSIGN events with old/new metadata. Consumers care most about these specific transitions.
 - The filter endpoint uses JpaSpecificationExecutor for AND-composed optional filters. Type-safe via Criteria, no JPQL strings.
 - Introduced a generic PageResponse<T> matching the README's pagination shape; will eventually replace MentionsPageResponse from Phase 8.
+
+### Phase 10 — Ticket dependencies
+- Discussed cycle-detection depth. The PDF says "no circular dependencies" without qualifying — implemented full BFS over the dependency graph rather than just rejecting direct A→B→A cycles. Indirect cycles (A→B→C→A) would make DONE permanently unreachable, so they're equally bad.
+- The DONE-blocker check uses a single direct-blocker repository query, not BFS. The rule is about whether the ticket's *direct* blockers are resolved, not whether the entire dependency graph is collapsed. This matches the natural reading of the spec.
+- Five validation rules in the add path, ordered from cheapest to most expensive: self-block, ticket existence (both endpoints), same-project, duplicate, cycle. Fail fast on the cheap checks.
+- Reused Phase 2's existsByTicketIdAndBlockerStatusNot repository method — it was added precisely for this DONE-transition check and finally got its first caller.
