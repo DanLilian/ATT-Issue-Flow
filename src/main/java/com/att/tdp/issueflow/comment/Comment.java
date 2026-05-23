@@ -10,6 +10,7 @@ import lombok.NoArgsConstructor;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Entity
 @Table(name = "comments")
@@ -57,16 +58,36 @@ public class Comment extends BaseEntity {
     }
 
     /**
-     * Replaces the mention set wholesale. Hibernate will diff the
-     * collection on flush: existing-but-removed entries are deleted,
-     * new entries are inserted, unchanged entries are untouched.
+     * Replaces the mention set wholesale, diffing against the existing
+     * collection so unchanged entries keep their identity (and their
+     * existing row in the DB).
      *
-     * Called by CommentService after parsing the (possibly new) content.
+     * IMPORTANT — why not clear() + add():
+     * Hibernate's ActionQueue groups INSERTs before DELETEs within a flush.
+     * A naive clear() + add(new CommentMention(this, alice)) when alice was
+     * already mentioned issues the INSERT first and trips the unique
+     * constraint on (comment_id, mentioned_user_id) before the DELETE runs.
+     *
+     * The correct pattern: remove only entries whose user is NOT in the
+     * new set (orphanRemoval handles the DELETE), then add only entries
+     * for users not already represented. Existing rows for unchanged
+     * mentions are left alone — no churn, no constraint violation.
      */
     public void replaceMentions(Set<User> mentionedUsers) {
-        this.mentions.clear();
+        // Remove mentions whose user is no longer in the new set.
+        // Uses iterator.remove so orphanRemoval fires on the deleted entries.
+        this.mentions.removeIf(m -> !mentionedUsers.contains(m.getMentionedUser()));
+
+        // Collect users who already have a mention row, so we don't re-add them.
+        Set<User> existing = this.mentions.stream()
+                .map(CommentMention::getMentionedUser)
+                .collect(java.util.stream.Collectors.toSet());
+
+        // Add only genuinely new mentions.
         for (User u : mentionedUsers) {
-            this.mentions.add(new CommentMention(this, u));
+            if (!existing.contains(u)) {
+                this.mentions.add(new CommentMention(this, u));
+            }
         }
     }
 }
