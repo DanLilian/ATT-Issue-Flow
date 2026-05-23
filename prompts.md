@@ -41,3 +41,13 @@ The conversation was opened with a senior-mentor role prompt that constrained th
 - Chose to add only `spring-security-crypto` for now (not the full starter) so password hashing is available without auto-locking endpoints. Full Spring Security arrives in Phase 5.
 - For delete: chose to flush() inside a try/catch in the service so FK-RESTRICT violations surface as a specific ConflictException with a clear message, not a generic 409 from the global handler.
 - Tests structured as slice tests (@DataJpaTest for service, @WebMvcTest for controller) rather than a full @SpringBootTest — much faster and the focus per test is sharper.
+
+### Phase 5 — JWT authentication
+- Asked the assistant to design a JWT auth flow that honors the spec's "logout invalidates" requirement. Discussed three options (stateless expiry, JTI deny-list, refresh tokens) and chose JTI deny-list as the only honest answer to the spec.
+- Worked through three sub-commits to keep diffs reviewable: (a) JWT primitives + V2 migration, (b) security filter chain + custom 401/403 + slice test config, (c) endpoints + end-to-end integration test.
+- Hit two `@WebMvcTest` + Spring Security gotchas during 5b:
+  1. Slice tests don't load main-package `@Configuration` classes by default — `@Import(SecurityConfig.class)` was needed.
+  2. Mocking the JWT filter as a `@MockitoBean` broke the chain because servlet filters are auto-registered when present as beans; the mock's no-op `doFilter` swallowed every request.
+- Resolved by creating a test-only `TestSecurityConfig` that mirrors path rules without the JWT filter, plus `@WebMvcTest.excludeFilters` to suppress the main `SecurityConfig` from the slice scan.
+- Login deliberately collapses all AuthenticationException subtypes to one generic 401 message ("Invalid username or password") to prevent username enumeration.
+- The end-to-end integration test (`AuthIntegrationTest`) uses real Spring context, real BCrypt, real JWT filter — the only test that proves the whole auth story works as a system.
