@@ -28,3 +28,7 @@ app:
       - image/jpeg
       - application/pdf
       - text/plain
+  issueflow:
+    schedule:
+      overdue-escalation-cron: "-"
+      revoked-token-purge-cron: "-"

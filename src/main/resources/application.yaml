@@ -44,3 +44,8 @@ app:
       - image/jpeg
       - application/pdf
       - text/plain
+  issueflow:
+    # ... existing issueflow.* config (jwt etc.) ...
+    schedule:
+      overdue-escalation-cron: "0 */15 * * * *"   # every 15 minutes, on the minute
+      revoked-token-purge-cron: "0 0 3 * * *"     # daily at 03:00 server time
