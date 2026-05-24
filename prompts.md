@@ -115,3 +115,9 @@ The conversation was opened with a senior-mentor role prompt that constrained th
 - Tie-breaker (oldest createdAt) is encoded in the SQL ORDER BY, not in Java. One round trip; deterministic at the database.
 - AUTO_ASSIGN audit fires only when auto-assignment actually happened — not on every create. Explicit assignees produce only TICKET_CREATE.
 - If no DEVELOPER users exist, assignee remains null and no AUTO_ASSIGN audit is emitted. Matches PDF 3.8.
+
+### Phase 15 — Integration tests
+- Five new integration test classes, all mirroring the AuthIntegrationTest pattern (full Spring context, @AutoConfigureMockMvc, @Transactional rollback, real JWT minting via the login helper).
+- Focused on cross-feature interactions: ticket lifecycle through the full filter chain, dependency + DONE-rule cooperation, attachment byte round-trip, CSV partial-failure over real multipart, ADMIN-only authorization on every gated endpoint.
+- Deliberately not "more tests of the same thing" — slice tests already cover individual rules. These prove the layers cooperate.
+- The AdminAuthorizationIntegrationTest is the proof that the ROLE_ prefix in AppUserPrincipal.getAuthorities() cooperates with @PreAuthorize hasRole('ADMIN') across every gated endpoint. One config bug in the role mapping would surface as multiple failures here.
