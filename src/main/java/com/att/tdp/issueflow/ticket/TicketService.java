@@ -9,6 +9,7 @@ import com.att.tdp.issueflow.ticket.dto.CreateTicketRequest;
 import com.att.tdp.issueflow.ticket.dto.TicketResponse;
 import com.att.tdp.issueflow.ticket.dto.UpdateTicketRequest;
 import com.att.tdp.issueflow.user.User;
+import com.att.tdp.issueflow.user.UserRole;
 import com.att.tdp.issueflow.user.UserRepository;
 import com.att.tdp.issueflow.audit.AuditAction;
 import com.att.tdp.issueflow.audit.AuditEntityType;
@@ -86,11 +87,14 @@ public class TicketService {
                 .orElseThrow(() -> NotFoundException.of("Project", req.projectId()));
 
         User assignee = null;
+        boolean autoAssigned = false;
         if (req.assigneeId() != null) {
             assignee = userRepository.findById(req.assigneeId())
                     .orElseThrow(() -> NotFoundException.of("User", req.assigneeId()));
+        } else {
+            assignee = autoAssignDeveloper(project.getId());
+            autoAssigned = (assignee != null);
         }
-        // TODO Phase 14: if assignee is null, run auto-assignment by workload.
 
         Ticket ticket = new Ticket(
                 req.title(), req.description(),
@@ -104,7 +108,16 @@ public class TicketService {
                 AuditEntityType.TICKET,
                 saved.getId(),
                 Map.of("title", saved.getTitle()));
-        // TODO Phase 14: if auto-assigned, audit AUTO_ASSIGN with actor=SYSTEM.
+
+        if (autoAssigned) {
+            auditService.record(
+                    AuditAction.AUTO_ASSIGN,
+                    AuditEntityType.TICKET,
+                    saved.getId(),
+                    AuditActor.SYSTEM,
+                    null,
+                    Map.of("assigneeId", assignee.getId()));
+        }
 
         return TicketResponse.from(saved);
     }
@@ -293,5 +306,25 @@ public class TicketService {
                 AuditEntityType.TICKET,
                 id,
                 null);
+    }
+    
+    /**
+     * Picks the DEVELOPER with the fewest open (non-DONE) tickets in the
+     * given project. Tie-break: oldest createdAt wins (encoded in the
+     * repository's findWorkloadByProject ORDER BY).
+     *
+     * Returns null when no DEVELOPER users exist at all — ticket is then
+     * created with assignee=null per PDF 3.8.
+     *
+     * The query is a LEFT JOIN so DEVELOPER users with zero tickets in the
+     * project still appear (with count=0) and are eligible candidates.
+     */
+    private User autoAssignDeveloper(Long projectId) {
+        List<Object[]> workload = ticketRepository.findWorkloadByProject(projectId);
+        if (workload.isEmpty()) {
+            return null;
+        }
+        Long pickedUserId = (Long) workload.get(0)[0];
+        return userRepository.findById(pickedUserId).orElse(null);
     }
 }

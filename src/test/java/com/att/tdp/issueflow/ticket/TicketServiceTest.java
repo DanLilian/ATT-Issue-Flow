@@ -123,15 +123,15 @@ class TicketServiceTest {
     }
 
     @Test
-    void create_allowsNullAssignee() {
-        CreateTicketRequest req = new CreateTicketRequest(
-                "T", "d", TicketStatus.TODO, TicketPriority.LOW, TicketType.BUG,
-                projectId, null, null);
+    void create_withoutAssigneeId_autoAssignsToAvailableDeveloper() {
+        TicketResponse created = ticketService.create(new CreateTicketRequest(
+        "T", "desc",
+        TicketStatus.TODO, TicketPriority.LOW, TicketType.BUG,
+        projectId, null /* assigneeId */, null /* dueDate */));
 
-        TicketResponse created = ticketService.create(req);
-
-        assertThat(created.assigneeId()).isNull();
-    }
+        // Auto-assign picks the DEVELOPER from the fixture.
+        assertThat(created.assigneeId()).isNotNull();
+        }
 
     @Test
     void create_rejectsTicketAgainstSoftDeletedProject() {
