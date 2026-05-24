@@ -19,6 +19,20 @@ The conversation was opened with a senior-mentor role prompt that constrained th
 ## Notable follow-up prompts
 (Logged as the project progresses.)
 
+## Summary
+
+Used Claude as a senior-engineer pair across all 16 implementation phases. The AI surfaced trade-offs and edge cases; I made the architectural choices and wrote/reviewed every line of code.
+
+Areas where the AI was most valuable:
+- **Spring Security gotchas** — `AuthorizationDeniedException` vs `AccessDeniedException` in Spring 6, the `ROLE_` prefix convention, slice-test security wiring.
+- **Hibernate edge cases** — first-level cache hiding `@SQLRestriction` filters, optimistic-lock exception types (JPA at flush vs Spring at commit), `ActionQueue` INSERT-before-DELETE ordering.
+- **Transaction-strategy decisions** — CSV import's per-row commits via the proxy boundary, audit log's `REQUIRES_NEW` trade-off (observability over consistency), scheduled-job idempotency via query-level filtering.
+- **Catching design errors before they became code** — e.g., the cycle-detection depth question (PDF says "no circular dependencies" — implemented full BFS, not just direct cycles), the auto-assign workload query needing `LEFT JOIN` for new developers with zero tickets.
+
+Every decision in this codebase has a recorded reason. The per-phase entries below capture those reasons in the order they were made.
+
+---
+
 ### Phase 1 — Project setup
 - Asked the assistant to choose between Flyway vs `ddl-auto`, springdoc vs none, and stateless logout vs deny-list, given a strict reading of the requirements. Decisions made: Flyway, springdoc, JTI deny-list.
 
@@ -121,3 +135,17 @@ The conversation was opened with a senior-mentor role prompt that constrained th
 - Focused on cross-feature interactions: ticket lifecycle through the full filter chain, dependency + DONE-rule cooperation, attachment byte round-trip, CSV partial-failure over real multipart, ADMIN-only authorization on every gated endpoint.
 - Deliberately not "more tests of the same thing" — slice tests already cover individual rules. These prove the layers cooperate.
 - The AdminAuthorizationIntegrationTest is the proof that the ROLE_ prefix in AppUserPrincipal.getAuthorities() cooperates with @PreAuthorize hasRole('ADMIN') across every gated endpoint. One config bug in the role mapping would surface as multiple failures here.
+
+## Closing notes on the AI workflow
+
+What worked:
+- Phase boundaries with explicit "design before code" decisions per phase.
+- Test-first verification per phase before moving on.
+- Recording decisions in this file as they were made, not retrospectively.
+
+What I'd do differently:
+- Inspect existing source files before adding wiring — twice during the project I had to fix constructor signature mismatches that would have been caught by a quick file read first.
+- Test the YAML structure explicitly when adding new property prefixes — once I had a context-load failure caused by misplaced indentation.
+- Use the same `@Import` additions pattern for slice tests from the start rather than full replacements — one test class lost its `PasswordEncoderConfig` import during a Phase 9 modification.
+
+All three issues were caught by the test suite within a single iteration, so the cost was minutes, not hours.
