@@ -13,6 +13,9 @@ import com.att.tdp.issueflow.user.UserRepository;
 import com.att.tdp.issueflow.audit.AuditAction;
 import com.att.tdp.issueflow.audit.AuditEntityType;
 import com.att.tdp.issueflow.audit.AuditService;
+import com.att.tdp.issueflow.audit.AuditActor;
+import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import org.springframework.stereotype.Service;
@@ -191,6 +194,60 @@ public class TicketService {
         }
     }
 
+
+    /**
+     * Scans for overdue tickets and applies one escalation step to each.
+     * Called by OverdueEscalationJob on a cron schedule; safe to call
+     * manually for testing.
+     *
+     * Idempotency: the repository query already excludes CRITICAL+overdue
+     * tickets (the terminal escalated state), so re-running on already-
+     * terminal tickets is a no-op at the query level. Tickets that escalate
+     * to CRITICAL+overdue in one pass won't be picked up on the next pass.
+     *
+     * Per-ticket transaction: this method commits each escalation
+     * independently (delegated to the entity-level autoEscalate + per-call
+     * @Transactional). A version conflict on one ticket (concurrent user
+     * edit) does NOT affect other tickets in the same scan — the failed
+     * ticket simply waits for the next scheduled run.
+     *
+     * @return number of tickets escalated (priority bumped or marked overdue)
+     */
+    @Transactional
+    public int escalateAllOverdue() {
+        Instant now = Instant.now();
+        List<Ticket> candidates = ticketRepository.findEscalationCandidates(now);
+
+        int escalated = 0;
+        for (Ticket ticket : candidates) {
+            TicketPriority before = ticket.getPriority();
+            boolean wasOverdue = ticket.isOverdue();
+
+            ticket.autoEscalate();
+
+            // Only emit audit if state actually changed (defensive — the query
+            // already filters terminal state, so this should always change).
+            if (ticket.getPriority() != before || ticket.isOverdue() != wasOverdue) {
+                Map<String, Object> meta = new HashMap<>();
+                meta.put("priorityFrom", before);
+                meta.put("priorityTo", ticket.getPriority());
+                meta.put("isOverdueAfter", ticket.isOverdue());
+
+                // Long-form record: actor explicitly SYSTEM, no userId.
+                auditService.record(
+                        AuditAction.AUTO_ESCALATE,
+                        AuditEntityType.TICKET,
+                        ticket.getId(),
+                        AuditActor.SYSTEM,
+                        null /* userId */,
+                        meta);
+
+                escalated++;
+            }
+        }
+        return escalated;
+    }
+    
     @Transactional
     public void softDelete(Long id) {
         Ticket ticket = ticketRepository.findById(id)
