@@ -101,3 +101,11 @@ The conversation was opened with a senior-mentor role prompt that constrained th
 - Row numbers from CSVRecord.getRecordNumber() rather than raw file lines: a description with embedded newlines spans multiple file lines but is one row. Users think in rows.
 - Catch Exception in the per-row loop is intentional and documented: this is the one place in the codebase where converting any failure into a row-level error is correct. The alternative (catching every specific type) would be fragile and incomplete.
 - Chose to ignore the id column on import. Exported id is informational; imported tickets get fresh ids. Avoids cross-environment collision and matches the natural "import = create new" semantics.
+
+### Phase 13 — Scheduled jobs
+- Externalized cron schedules to application.yaml under issueflow.schedule.*. Test profile sets both to "-" (Spring's disable sentinel) so the scheduler doesn't fire jobs spontaneously during unrelated tests.
+- Idempotency at two layers: (a) the query already excludes CRITICAL+overdue terminal-state tickets, so the job picks up zero work on subsequent runs; (b) the service method asserts state-change before emitting an audit row, so even hypothetical no-op pickups produce no audit noise. The combined effect: running the job N times on the same data is indistinguishable from running it once.
+- Per-ticket transactions for escalation (same model as CSV import in Phase 12): a single user-editing-the-same-ticket version conflict doesn't roll back the other 49 escalations.
+- AuditService.record is called with the long-form signature that lets us pass actor=SYSTEM and userId=null explicitly. The short-form would look up the security context, which is empty in a scheduled job — would default to SYSTEM, but the long-form makes the intent unmistakable.
+- Tests invoke the service method (or job's run() method) directly rather than relying on the scheduler. Testing the cron expression itself would test Spring's scheduling, not our logic.
+- RevokedTokenPurgeJob uses @Modifying + JPQL for bulk delete rather than Spring Data's derived per-row deletes. One SQL statement vs N.
