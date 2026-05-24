@@ -93,3 +93,11 @@ The conversation was opened with a senior-mentor role prompt that constrained th
 - For listing attachments, used a JPQL constructor expression projection to avoid touching the BYTEA column. @Basic(LAZY) is only a hint without bytecode enhancement; the explicit projection query is guaranteed and visible in the SQL log.
 - For download, chose byte[] over StreamingResponseBody. 10MB fits comfortably in memory and the controller stays simple. Production at larger scale would stream.
 - Content-Disposition uses Spring's ContentDisposition builder for proper RFC 5987 encoding of non-ASCII filenames.
+
+### Phase 12 — CSV
+- Used commons-csv 1.10.0 (pulled in by the skeleton pom). CSVPrinter handles quoting on write; CSVParser handles unquoting on read. Embedded commas, doubled quotes, and embedded newlines round-trip correctly with no manual handling. The round-trip test exists specifically to prove this.
+- Key transactional decision: the CSV service's importCsv method is NOT @Transactional. Per-row commits happen via TicketService.create's @Transactional boundary across the proxy. If importCsv itself were @Transactional, any failed row would mark the whole transaction rollback-only, defeating partial-failure semantics.
+- Whole-file rejection for missing-required-column header errors: better UX than per-row failures with identical messages.
+- Row numbers from CSVRecord.getRecordNumber() rather than raw file lines: a description with embedded newlines spans multiple file lines but is one row. Users think in rows.
+- Catch Exception in the per-row loop is intentional and documented: this is the one place in the codebase where converting any failure into a row-level error is correct. The alternative (catching every specific type) would be fragile and incomplete.
+- Chose to ignore the id column on import. Exported id is informational; imported tickets get fresh ids. Avoids cross-environment collision and matches the natural "import = create new" semantics.
