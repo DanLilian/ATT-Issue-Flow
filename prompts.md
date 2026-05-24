@@ -86,3 +86,10 @@ The conversation was opened with a senior-mentor role prompt that constrained th
 - The DONE-blocker check uses a single direct-blocker repository query, not BFS. The rule is about whether the ticket's *direct* blockers are resolved, not whether the entire dependency graph is collapsed. This matches the natural reading of the spec.
 - Five validation rules in the add path, ordered from cheapest to most expensive: self-block, ticket existence (both endpoints), same-project, duplicate, cycle. Fail fast on the cheap checks.
 - Reused Phase 2's existsByTicketIdAndBlockerStatusNot repository method — it was added precisely for this DONE-transition check and finally got its first caller.
+
+### Phase 11 — Attachments
+- Two-layer size enforcement: Spring's multipart filter (10MB) for primary defense plus a service-level check for belt-and-braces and easier unit testing. The service check catches misconfiguration of the filter, and the test verifies the business rule independently of Spring's plumbing.
+- MIME whitelist is duplicated between AttachmentService and V1__init.sql. Adding a new type requires changing both — annoying but deliberate. The service is user-facing; the DB constraint is the safety net.
+- For listing attachments, used a JPQL constructor expression projection to avoid touching the BYTEA column. @Basic(LAZY) is only a hint without bytecode enhancement; the explicit projection query is guaranteed and visible in the SQL log.
+- For download, chose byte[] over StreamingResponseBody. 10MB fits comfortably in memory and the controller stays simple. Production at larger scale would stream.
+- Content-Disposition uses Spring's ContentDisposition builder for proper RFC 5987 encoding of non-ASCII filenames.
