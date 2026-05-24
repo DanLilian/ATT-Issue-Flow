@@ -109,3 +109,9 @@ The conversation was opened with a senior-mentor role prompt that constrained th
 - AuditService.record is called with the long-form signature that lets us pass actor=SYSTEM and userId=null explicitly. The short-form would look up the security context, which is empty in a scheduled job — would default to SYSTEM, but the long-form makes the intent unmistakable.
 - Tests invoke the service method (or job's run() method) directly rather than relying on the scheduler. Testing the cron expression itself would test Spring's scheduling, not our logic.
 - RevokedTokenPurgeJob uses @Modifying + JPQL for bulk delete rather than Spring Data's derived per-row deletes. One SQL statement vs N.
+
+### Phase 14 — Auto-assign by workload
+- Reused Phase 2's findWorkloadByProject query directly. The LEFT JOIN was the key design choice — DEVELOPERs with zero open tickets in the project still appear as candidates, which is what makes auto-assignment work for new developers who haven't been assigned anything yet.
+- Tie-breaker (oldest createdAt) is encoded in the SQL ORDER BY, not in Java. One round trip; deterministic at the database.
+- AUTO_ASSIGN audit fires only when auto-assignment actually happened — not on every create. Explicit assignees produce only TICKET_CREATE.
+- If no DEVELOPER users exist, assignee remains null and no AUTO_ASSIGN audit is emitted. Matches PDF 3.8.
